@@ -16,6 +16,19 @@ import { Trackers } from './track.js';
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
+/* ── touch ──────────────────────────────────────────────────────────────
+   A finger leaves no cursor behind it, so on a coarse pointer the lens has
+   nothing to follow. Instead of the cursor grid plus the soft edge, a touch
+   device gets ONE treatment on the periphery: the grid magnification itself,
+   absent at the centre of the frame and fading in toward the corners. It
+   replaces `softenEdges` rather than joining it — a frame gets one edge
+   treatment, not two. Flip EDGE_GRID to true unconditionally to put the same
+   viewfinder edge on the desktop build. */
+const COARSE     = matchMedia('(pointer: coarse)').matches;
+const EDGE_GRID  = COARSE;
+const MAX_DECODE = COARSE ? 3 : 99;   // concurrent hardware decoders to ask for
+const TAP        = COARSE ? 12 : 8;   // a finger wanders; a mouse does not
+
 /* ── the repeating block ────────────────────────────────────────────────
    Four columns, three rows, two slots deliberately left empty so the plane
    breathes. Per-column vertical offsets break the rows without breaking the
@@ -46,6 +59,15 @@ const BLUR_SCALE = 0.34;
 const BLUR_PX    = 3.3;   // radius in the small buffer
 const BLUR_START = 0.50;  // fraction of the image circle that stays sharp
 
+/* The peripheral grid. Same lattice and the same dot as the cursor lens, but
+   the strength is radial from the centre of the frame rather than from the
+   pointer, and the magnification is capped — an uncapped corner blows a
+   single pixel up to a whole cell. */
+const EDGE_START = 0.50;  // exactly BLUR_START: it lands where the blur did
+const EDGE_FALL  = 1.90;  // stays at nothing for longer, then arrives quickly
+const EDGE_MAX   = 0.42;  // hardest magnification at the corner (≈ 1.7×)
+const EDGE_DOT   = 0.30;  // the dot is a permanent resident here, not a cursor
+
 const GRID_BOX   = 54;    // ≈ 3 × a cursor
 const GRID_R     = 285;   // reach of the effect, CSS px
 const GRID_FALL  = 1.5;   // steeper than linear: a tight core, a soft edge
@@ -60,6 +82,8 @@ export class WorkCanvas {
     this.onRoute = opts.onRoute || (() => {});
     this.onFirstDrag = opts.onFirstDrag || (() => {});
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.coarse = COARSE;
+    this.edgeGrid = EDGE_GRID;
 
     this.x = 0; this.y = 0;          // rendered offset
     this.tx = 0; this.ty = 0;        // target offset
@@ -74,7 +98,10 @@ export class WorkCanvas {
 
     this.videos = WORKS.map(w => {
       const v = document.createElement('video');
-      v.src = w.src; v.muted = true; v.loop = true; v.playsInline = true;
+      // a phone gets the 640-wide set: 3.2 MB instead of 13, and a frame the
+      // hardware decoder can actually keep up with
+      v.src = COARSE ? w.src.replace('/tiles/', '/tiles-sm/') : w.src;
+      v.muted = true; v.loop = true; v.playsInline = true;
       v.preload = 'auto'; v.setAttribute('playsinline','');
       v.addEventListener('loadeddata', () => { this.ready = true; });
       return v;
@@ -94,6 +121,9 @@ export class WorkCanvas {
   resize(){
     const w = window.innerWidth, h = window.innerHeight;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // two full-frame passes every frame: past roughly 3.2 Mpx a phone drops
+    // frames faster than the extra resolution buys anything back
+    if (COARSE) while (this.dpr > 1 && w * h * this.dpr * this.dpr > 3.2e6) this.dpr -= 0.25;
     for (const c of [this.cv, this.buf]){
       c.width = Math.round(w * this.dpr);
       c.height = Math.round(h * this.dpr);
@@ -113,7 +143,9 @@ export class WorkCanvas {
     this.blockH = ROWS * this.rowPitch;
     this.trackers.resize(w, h);
 
-    // the soft-edge buffer and its falloff mask
+    // the soft-edge buffer and its falloff mask — not allocated at all when
+    // the periphery is carrying the grid instead
+    if (this.edgeGrid){ this.blurCv.width = this.blurCv.height = 1; return; }
     const bw = Math.max(2, Math.round(w * BLUR_SCALE));
     const bh = Math.max(2, Math.round(h * BLUR_SCALE));
     this.blurCv.width = this.maskCv.width = bw;
@@ -144,7 +176,7 @@ export class WorkCanvas {
         this.drag.moved = Math.max(this.drag.moved, Math.hypot(dx, dy));
         this.tx = this.drag.ox + dx;
         this.ty = this.drag.oy + dy;
-        if (this.drag.moved > 8 && !this.dragged){ this.dragged = true; this.onFirstDrag(); }
+        if (this.drag.moved > TAP && !this.dragged){ this.dragged = true; this.onFirstDrag(); }
       } else {
         this._hover(e.clientX, e.clientY);
       }
@@ -155,7 +187,7 @@ export class WorkCanvas {
       cv.classList.remove('is-drag');
       // flick
       const dt = Math.max(16, performance.now() - d.t);
-      if (d.moved > 8){
+      if (d.moved > TAP){
         this.tx += this.vx * 90 / dt * 4;
         this.ty += this.vy * 90 / dt * 4;
       } else {
@@ -194,8 +226,10 @@ export class WorkCanvas {
   }
 
   _cardAt(x, y){
+    // a fingertip is about 9 mm across; the type is not
+    const p = this.coarse ? 16 : 0;
     for (const r of (this._cardRects || [])){
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+      if (x >= r.x - p && x <= r.x + r.w + p && y >= r.y - p && y <= r.y + r.h + p) return r;
     }
     return null;
   }
@@ -257,8 +291,10 @@ export class WorkCanvas {
     c.fillRect(0, 0, this.w, this.h);
 
     const need = new Array(this.videos.length).fill(false);
+    const near = new Array(this.videos.length).fill(Infinity);
     const cards = [];
     const tiles = [];
+    const fcx = this.w / 2, fcy = this.h / 2;
 
     const i0 = Math.floor((-this.x - this.blockW) / this.blockW);
     const i1 = Math.ceil((-this.x + this.w + this.blockW) / this.blockW);
@@ -275,6 +311,8 @@ export class WorkCanvas {
           if (x > this.w || x + this.tileW < 0 || y > this.h || y + this.tileH < 0) continue;
           if (s.kind === 'work'){
             need[s.i] = true;
+            const dd = Math.hypot(x + this.tileW / 2 - fcx, y + this.tileH / 2 - fcy);
+            if (dd < near[s.i]) near[s.i] = dd;
             this.paintWork(c, s.i, x, y);
             tiles.push({ x, y, w: this.tileW, h: this.tileH });
           } else {
@@ -286,6 +324,18 @@ export class WorkCanvas {
     }
     this._cardRects = cards;
     this._tileRects = tiles;
+
+    /* A page only gets a handful of hardware decoders on iOS, and past that
+       they fail quietly — the plane fills with frozen frames and nothing in
+       the console says why. So on touch only the few films nearest the centre
+       are asked to run; the rest hold the last frame they painted, which is
+       what a paused <video> draws anyway. */
+    if (MAX_DECODE < this.videos.length){
+      const live = new Set(
+        need.map((n, i) => (n ? i : -1)).filter(i => i >= 0)
+            .sort((a, b) => near[a] - near[b]).slice(0, MAX_DECODE));
+      for (let n = 0; n < need.length; n++) if (need[n] && !live.has(n)) need[n] = false;
+    }
 
     // only decode what is actually on the plane in front of someone
     for (let n = 0; n < this.videos.length; n++){
@@ -334,9 +384,10 @@ export class WorkCanvas {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.cv.width, this.cv.height);
     ctx.drawImage(this.buf, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.edgeGrid) return this.edgeGrid_(ctx);
     if (this.mx < -9998) return;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // The type is punched out of the overlay entirely. Akif's note: the grid
     // must not break the words apart when the cursor passes over them — same
     // rule as the last build, where nothing was ever allowed to cross a word.
@@ -379,6 +430,52 @@ export class WorkCanvas {
     ctx.restore();
   }
 
+  /* ── pass 2b · the peripheral grid ────────────────────────────────────
+     The touch build's edge treatment. The lattice is fixed to the frame, not
+     to a pointer, so it reads as a viewfinder the plane moves behind rather
+     than as a cursor effect with no cursor. Strength is zero across the sharp
+     centre and ramps to EDGE_MAX at the corners of the image circle — the
+     same radial law the blur used, so the frame falls off the way it always
+     did; it is only what it falls off INTO that changed. */
+  edgeGrid_(ctx){
+    const B = GRID_BOX, dpr = this.dpr;
+    const cx = this.w / 2, cy = this.h / 2;
+    const half = Math.hypot(this.w, this.h) / 2;
+    // centre the lattice on the frame so the four corners agree
+    const x0 = cx - Math.ceil(cx / B) * B;
+    const y0 = cy - Math.ceil(cy / B) * B;
+
+    ctx.save();
+    this.clipType(ctx);
+    const dots = [];
+    for (let x = x0; x < this.w; x += B){
+      for (let y = y0; y < this.h; y += B){
+        const d = Math.hypot(x + B / 2 - cx, y + B / 2 - cy) / half;
+        const s = Math.pow(clamp((d - EDGE_START) / (1 - EDGE_START), 0, 1), EDGE_FALL);
+        if (s < 0.004) continue;
+        const inset = B * s * EDGE_MAX;
+        const src = B - inset;
+        if (src > 0.5){
+          ctx.drawImage(
+            this.buf,
+            (x + inset / 2) * dpr, (y + inset / 2) * dpr, src * dpr, src * dpr,
+            x, y, B, B
+          );
+        }
+        dots.push([x, y, s]);
+      }
+    }
+    ctx.fillStyle = '#111014';
+    for (const [x, y, s] of dots){
+      ctx.globalAlpha = EDGE_DOT * s;
+      ctx.beginPath();
+      ctx.arc(x, y, B * 0.115 * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   /** Clips to everything EXCEPT the text cards, with a soft rounded hole. */
   clipType(ctx){
     const p = new Path2D();
@@ -398,6 +495,7 @@ export class WorkCanvas {
      on purpose: a lens softens the corner of the whole frame, films, type,
      brackets and all — not one layer of it. */
   softenEdges(){
+    if (this.edgeGrid) return;          // the periphery is carrying the grid
     const ctx = this.ctx, b = this.bl;
     const bw = this.blurCv.width, bh = this.blurCv.height;
     if (bw < 4 || bh < 4) return;

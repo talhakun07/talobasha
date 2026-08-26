@@ -35,8 +35,16 @@
 *,*::before,*::after{ box-sizing:border-box; }
 
 html,body{ height:100%; }
+/* The address bar's slide is what makes 100vh wrong on a phone. Nothing here
+   scrolls, so the bar rarely moves — but dvh is the honest unit and costs
+   nothing where it is understood. */
+@supports (height:100dvh){ html,body{ height:100dvh; } }
+html{ overscroll-behavior:none; }
 body{
   margin:0; background:var(--paper); color:var(--ink);
+  -webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none; user-select:none;
+  -webkit-text-size-adjust:100%;
   font-family:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
   font-weight:400; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   overflow:hidden; overscroll-behavior:none;
@@ -100,7 +108,8 @@ body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
 .work__cv.is-drag{ cursor:grabbing; }
 .work__cv.is-hot{ cursor:pointer; }
 .work__hint{
-  position:absolute; left:50%; bottom:clamp(18px,3.4vh,34px); transform:translateX(-50%);
+  position:absolute; left:50%; transform:translateX(-50%);
+  bottom:calc(clamp(18px,3.4vh,34px) + env(safe-area-inset-bottom,0px));
   margin:0; font-size:.6875rem; font-weight:500; letter-spacing:.16em;
   text-transform:uppercase; color:var(--ink-2);
   opacity:0; transition:opacity 900ms var(--ease-in-out);
@@ -112,7 +121,12 @@ body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
 /* ── pages ──────────────────────────────────────────────────────────── */
 .page{
   position:fixed; inset:0; z-index:60; background:var(--paper);
-  display:grid; place-items:center; padding:clamp(28px,6vw,80px);
+  display:grid; place-items:center;
+  padding:calc(clamp(28px,6vw,80px) + env(safe-area-inset-top,0px))
+          calc(clamp(28px,6vw,80px) + env(safe-area-inset-right,0px))
+          calc(clamp(28px,6vw,80px) + env(safe-area-inset-bottom,0px))
+          calc(clamp(28px,6vw,80px) + env(safe-area-inset-left,0px));
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
   opacity:0; transition:opacity var(--t-mid) var(--ease-in-out);
 }
 .page[hidden]{ display:none; }
@@ -134,18 +148,20 @@ body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
   transition:background var(--t-mid) var(--ease-out), color var(--t-mid) var(--ease-out);
   min-height:44px;
 }
-.page__cta:hover,.page__cta:focus-visible{ background:var(--ink); color:var(--paper); }
+.page__cta:focus-visible{ background:var(--ink); color:var(--paper); }
 .page__back{
   display:block; margin:3.2rem auto 0; padding:.6rem 1rem; min-height:44px;
   border:0; background:none; cursor:pointer; color:var(--ink-2);
   font-family:inherit; font-size:.6875rem; font-weight:500;
   letter-spacing:.16em; text-transform:uppercase;
 }
-.page__back:hover,.page__back:focus-visible{ color:var(--ink); }
+.page__back:focus-visible{ color:var(--ink); }
 
 /* ── skip ───────────────────────────────────────────────────────────── */
 .skip{
-  position:fixed; right:clamp(14px,2.4vw,26px); bottom:clamp(14px,2.4vh,26px);
+  position:fixed;
+  right:calc(clamp(14px,2.4vw,26px) + env(safe-area-inset-right,0px));
+  bottom:calc(clamp(14px,2.4vh,26px) + env(safe-area-inset-bottom,0px));
   z-index:70; min-height:44px; padding:.55rem .9rem;
   border:0; background:none; cursor:pointer; color:var(--ink-2);
   font-family:inherit; font-size:.625rem; font-weight:500;
@@ -154,9 +170,41 @@ body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
   pointer-events:none;
 }
 .skip.is-lit{ opacity:.6; pointer-events:auto; }
-.skip:hover,.skip:focus-visible{ opacity:1; color:var(--ink); }
+.skip:focus-visible{ opacity:1; color:var(--ink); }
 
 :focus-visible{ outline:2px solid var(--ink); outline-offset:3px; }
+
+/* ── touch ──────────────────────────────────────────────────────────────
+   A sticky :hover is the classic phone bug — the state latches on tap and
+   stays until something else is tapped. Every hover rule lives behind a real
+   hover; :focus-visible carries the keyboard, and touch gets neither. */
+@media (hover:hover) and (pointer:fine){
+  .page__cta:hover{ background:var(--ink); color:var(--paper); }
+  .page__back:hover{ color:var(--ink); }
+  .skip:hover{ opacity:1; color:var(--ink); }
+}
+
+@media (pointer:coarse){
+  /* 42vw of a 390px screen is a 164px mark — too small to be the first thing
+     anyone sees. Portrait gets the width it can afford; landscape is still
+     governed by height. */
+  .mark__v{ width:min(58vw,44vh); }
+  /* the canvas is dragged, so nothing on it may be selected or long-pressed */
+  .work__cv{ -webkit-touch-callout:none; }
+  /* the hint has to clear the home indicator and read at arm's length */
+  .work__hint{ font-size:.75rem; letter-spacing:.14em; }
+  .skip{ font-size:.6875rem; padding:.7rem 1rem; }
+  .page__p{ font-size:1rem; line-height:1.6; }
+}
+
+/* a phone on its side has almost no height to spend */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:520px){
+  .page{ padding-block:calc(18px + env(safe-area-inset-top,0px))
+                       calc(18px + env(safe-area-inset-bottom,0px)); }
+  .page__t{ margin-bottom:.9rem; font-size:clamp(1.5rem,6vh,2rem); }
+  .page__cta{ margin-top:1.4rem; }
+  .page__back{ margin-top:1.6rem; }
+}
 
 @media (prefers-reduced-motion:reduce){
   /* keep every state reachable, just without the travel */

@@ -1,8 +1,13 @@
 // ══ nomad · orchestration ═══════════════════════════════════════════════
 // mark → iPod → (press play) → digicam → the canvas of work → pages.
 
-import { GL, load, IpodAct, CameraAct } from './scene.js';
+// scene.js is NOT imported statically. It pulls three.js (1.3 MB) behind it,
+// and the lite path never renders a polygon — a static import would make every
+// phone on the planet download a renderer it will not use. See LITE below.
 import { WorkCanvas } from './canvas.js';
+
+let S = null;                       // the scene module, once asked for
+let ipodModel = null, camModel = null;   // in flight from the moment it is
 
 const $ = id => document.getElementById(id);
 const body      = document.body;
@@ -17,6 +22,16 @@ const vig       = $('vig');
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ── the lite path ───────────────────────────────────────────────────────
+   A touch device gets the mark and then the canvas of work, and nothing in
+   between: no three.js, no PMREM, no 3.3 MB of models. Akif's call. The two
+   acts are the best thing on the desktop site and the worst thing to ask a
+   phone for — two glb loads and an environment bake before a visitor on
+   cellular has seen a single film.
+   `?full` forces the whole sequence on a phone, for checking it there. */
+const LITE = matchMedia('(pointer: coarse)').matches
+             && !/[?&]full(&|=|$)/.test(location.search);
 
 /* ── audio ──────────────────────────────────────────────────────────────
    Muted playback is always permitted, so the track is set rolling muted on
@@ -120,7 +135,16 @@ function ensureWork(){
     onFirstDrag: () => { hint.classList.add('is-gone'); }
   });
   work.start();
-  window.addEventListener('resize', () => work.resize(), { passive:true });
+  /* A phone fires resize for every step of the URL bar sliding away, and each
+     one reallocates four canvases. Coalesce to one per frame. */
+  let pending = 0;
+  const onResize = () => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => { pending = 0; work.resize(); });
+  };
+  window.addEventListener('resize', onResize, { passive:true });
+  window.addEventListener('orientationchange', onResize, { passive:true });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize, { passive:true });
   return work;
 }
 
@@ -166,7 +190,9 @@ async function main(){
   try {
     await Promise.race([
       Promise.all([
-        document.fonts.load('400 40px "VCR OSD Mono"'),
+        // VCR sets two words on the iPod's screen and nothing else, so the
+        // lite path must never pay for it
+        LITE ? Promise.resolve() : document.fonts.load('400 40px "VCR OSD Mono"'),
         document.fonts.load('500 24px "SF Pro Display"'),
         document.fonts.load('400 24px "SF Pro Display"')
       ]),
@@ -174,12 +200,21 @@ async function main(){
     ]);
   } catch (e) { /* fall back to the stack in the font-family list */ }
 
-  gl = new GL(glCanvas);
-  gl.acts.push(vignetteDriver);
-  gl.start();
+  // the plane is warmed while the mark is still playing, so the hand-off is
+  // never a cold start with eight videos at readyState 0
+  if (LITE) setTimeout(ensureWork, 1200);
 
-  const ipodModel = load('./assets/models/ipod.glb');
-  const camModel  = load('./assets/models/camera.glb');
+  if (!LITE){
+    S = await import('./scene.js');
+    gl = new S.GL(glCanvas);
+    gl.acts.push(vignetteDriver);
+    gl.start();
+    // both models start downloading now and are awaited where they are used,
+    // so the camera is resident long before anyone presses play
+    ipodModel = S.load('./assets/models/ipod.glb');
+    camModel  = S.load('./assets/models/camera.glb');
+    ipodModel.catch(() => {}); camModel.catch(() => {});
+  }
 
   // ── the mark
   markVideo.play().catch(() => {});
@@ -198,13 +233,15 @@ async function main(){
   markWrap.hidden = true;
   if (skipped) return;
 
+  if (LITE) return lite();
+
   // ── the iPod
   let model;
   try { model = await ipodModel; }
   catch (e){ console.warn('ipod failed to load', e); return finish(); }
   if (skipped) return;
 
-  ipod = new IpodAct(gl, model);
+  ipod = new S.IpodAct(gl, model);
   gl.acts.push(ipod);
   gl.resize();
   body.classList.add('is-dark');
@@ -253,13 +290,13 @@ async function toCamera(){
   if (skipped) return;
 
   let model;
-  try { model = await load('./assets/models/camera.glb'); }
+  try { model = await camModel; }
   catch (e){ console.warn('camera failed to load', e); return finish(); }
   if (skipped) return;
 
   body.classList.remove('is-dark');   // back to paper for the digicam
 
-  cam = new CameraAct(gl, model, ensureWork().cv, {
+  cam = new S.CameraAct(gl, model, ensureWork().cv, {
     // the plane goes up underneath only once the monitor's edges ARE the
     // viewport's edges; the camera's own fade is then the cross-dissolve
     onReveal: () => { showWork(); skipBtn.classList.remove('is-lit'); },
@@ -268,6 +305,26 @@ async function toCamera(){
   gl.acts.push(cam);
   gl.resize();
   cam.begin();
+}
+
+/* The mark fades, the plane comes up under it, and the vignette — which on
+   the full path is driven off the acts' own progress — eases off on its own
+   clock, because on this path there is no act to read a progress from. Both
+   ends of the ramp are clamped: rAF hands you the timestamp of the START of
+   the frame, which can predate the performance.now() that scheduled it, and
+   an unclamped p goes negative. */
+function lite(){
+  glCanvas.hidden = true;
+  skipBtn.classList.remove('is-lit');
+  showWork();
+  const t0 = performance.now(), D = reduced ? 1 : 1000;
+  const ease = (now) => {
+    const p = Math.max(0, Math.min(1, (now - t0) / D));
+    dim(0.82 * (1 - p * p * (3 - 2 * p)));
+    if (p < 1) requestAnimationFrame(ease);
+  };
+  requestAnimationFrame(ease);
+  applyRoute();
 }
 
 function finish(){
@@ -285,6 +342,7 @@ function finish(){
 
 // a handle for the verification harness — inert in normal use
 window.__NOMAD = {
+  lite: LITE,
   get gl(){ return gl; }, get ipod(){ return ipod; },
   get cam(){ return cam; }, get work(){ return work; },
   /** hold an act at a fixed moment so a frame can be captured deterministically */
