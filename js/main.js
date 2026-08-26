@@ -22,15 +22,8 @@ const vig       = $('vig');
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/* ── the lite path ───────────────────────────────────────────────────────
-   A touch device gets the mark and then the canvas of work, and nothing in
-   between: no three.js, no PMREM, no 3.3 MB of models. Akif's call. The two
-   acts are the best thing on the desktop site and the worst thing to ask a
-   phone for — two glb loads and an environment bake before a visitor on
-   cellular has seen a single film.
-   `?full` forces the whole sequence on a phone, for checking it there. */
-const LITE = matchMedia('(pointer: coarse)').matches
-             && !/[?&]full(&|=|$)/.test(location.search);
+/* ── 3D experience enabled on all devices (mobile & desktop) ────── */
+const LITE = false;
 
 /* ── audio ──────────────────────────────────────────────────────────────
    Muted playback is always permitted, so the track is set rolling muted on
@@ -296,7 +289,8 @@ async function main(){
     if (!ipod) return;
     const travelled = ipod.release();
     glCanvas.classList.remove('is-turning');
-    if (travelled > 7) return;                       // that was a turn
+    const maxTravel = matchMedia('(pointer: coarse)').matches ? 16 : 8;
+    if (travelled > maxTravel) return;                       // that was a turn
     if (!ipod.press(e.clientX, e.clientY)) return;
     glCanvas.classList.remove('is-hot');
     await goAudible();
