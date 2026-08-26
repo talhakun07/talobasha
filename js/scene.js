@@ -388,7 +388,15 @@ export class IpodAct {
 
   press(x, y){
     if (!this.armed) return false;
-    if (!this.hover(x, y)) return false;
+    const isCoarse = matchMedia('(pointer: coarse)').matches;
+    if (isCoarse){
+      this.pointer.set((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1);
+      this.ray.setFromCamera(this.pointer, this.gl.camera);
+      const hits = this.ray.intersectObjects([this.hit, this.inner], true);
+      if (hits.length === 0 && !this.hover(x, y)) return false;
+    } else {
+      if (!this.hover(x, y)) return false;
+    }
     this.paintScreen(1, 1);
     return true;
   }
