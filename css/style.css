@@ -22,7 +22,8 @@
 }
 
 :root{
-  --paper:#ffffff;         /* exactly the paper the mark video was shot on */
+  --paper:#f8f6f2;         /* warm archival paper */
+  --paper-grain:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.12  0 0 0 0 0.10  0 0 0 0 0.08  0 0 0 0.046 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperGrain)'/%3E%3C/svg%3E");
   --ink:#111014;           /* tinted near-black, never #000 */
   --ink-2:#5d5b63;
   --hair:#e4e2e6;
@@ -57,6 +58,17 @@ body[data-stage="work"], body[data-stage="page"]{ overflow:hidden; }
 body{ transition:background-color 800ms var(--ease-in-out); }
 body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
 
+/* ── tactile paper texture overlay ──────────────────────────────────── */
+.paper-texture{
+  position:fixed; inset:0; z-index:35; pointer-events:none;
+  background-image:var(--paper-grain);
+  background-repeat:repeat;
+  opacity:0.9;
+  mix-blend-mode:multiply;
+  transition:opacity var(--t-mid) var(--ease-in-out);
+}
+body.is-dark .paper-texture{ opacity:0; }
+
 /* ── the vignette ───────────────────────────────────────────────────── */
 .vig{
   position:fixed; inset:0; z-index:50; pointer-events:none;
@@ -72,14 +84,50 @@ body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
   position:fixed; inset:0; display:grid; place-items:center;
   background:var(--paper); z-index:40;
   opacity:1; transition:opacity var(--t-mid) var(--ease-in-out);
+  cursor:pointer;
 }
 .mark.is-out{ opacity:0; pointer-events:none; }
 .mark[hidden]{ display:none; }
-.mark__v{
-  width:min(42vh,42vw); height:auto; display:block;
-  /* the clip is black ink on white paper — multiply knocks the paper out
-     against any light surface, so no seam and no compression halo. */
-  mix-blend-mode:multiply;
+.mark__brand{
+  display:inline-flex; align-items:baseline; justify-content:center;
+  font-family:'Caveat', 'Homemade Apple', 'La Belle Aurore', cursive;
+  font-size:clamp(4.6rem, 13vw, 8.8rem);
+  font-weight:400;
+  letter-spacing:0.01em;
+  line-height:1;
+  color:var(--ink);
+  user-select:none;
+  animation:brandFloat 3.6s ease-in-out 1.6s infinite alternate;
+}
+
+.mark__letter{
+  display:inline-block;
+  opacity:0;
+  transform:translateY(8px) scale(0.92) rotate(-2deg);
+  filter:blur(3px);
+  animation:inkWrite 420ms calc(var(--i) * 125ms + 120ms) cubic-bezier(0.2, 0.8, 0.35, 1) forwards;
+}
+
+@keyframes inkWrite{
+  0%{
+    opacity:0;
+    transform:translateY(10px) scale(0.88) rotate(-4deg);
+    filter:blur(3.5px);
+  }
+  60%{
+    opacity:0.85;
+    filter:blur(0.8px);
+  }
+  100%{
+    opacity:1;
+    transform:translateY(0) scale(1) rotate(0deg);
+    filter:blur(0px);
+  }
+}
+
+@keyframes brandFloat{
+  0%   { transform:translateY(0); }
+  100% { transform:translateY(-4px); }
 }
 
 /* ── webgl surface ──────────────────────────────────────────────────── */
@@ -132,14 +180,77 @@ body.is-dark{ background:#08080a; --ink-2:#8e8c96; }
 .page[hidden]{ display:none; }
 .page.is-lit{ opacity:1; }
 .page__in{ width:100%; max-width:34rem; text-align:center; }
+.page__in--wide{ max-width:44rem; }
+.page__media{
+  width:100%; max-width:min(90vw, 620px); margin:0 auto 1.8rem;
+  border-radius:14px; overflow:hidden;
+  box-shadow:0 14px 40px rgba(17,16,20,0.08), 0 2px 8px rgba(17,16,20,0.04);
+  background:#08080a;
+}
+.page__video{
+  width:100%; height:auto; max-height:min(58vh, 460px);
+  display:block; object-fit:contain; border-radius:14px;
+}
 .page__t{
   margin:0 0 1.6rem; font-size:clamp(2rem,5vw,3rem); font-weight:500;
   letter-spacing:-.035em; line-height:1.04;
 }
-.page__p{
-  margin:0 auto; max-width:36ch; font-size:1.0625rem; line-height:1.65;
+.page__anniversary-date{
+  margin:-1rem auto 2rem;
+  font-family:'Caveat', cursive;
+  font-size:clamp(1.4rem, 3.2vw, 2rem);
+  color:#b84242;
+}
+
+.timer-grid{
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
+  gap:clamp(10px, 2.5vw, 20px);
+  max-width:38rem;
+  margin:0 auto 2.2rem;
+}
+
+.timer-card{
+  background:rgba(255, 255, 255, 0.72);
+  border:1px solid rgba(17, 16, 20, 0.08);
+  border-radius:14px;
+  padding:clamp(14px, 3vw, 24px) clamp(8px, 1.5vw, 16px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  box-shadow:0 8px 24px rgba(17, 16, 20, 0.03);
+  backdrop-filter:blur(6px);
+}
+
+.timer-val{
+  font-family:'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size:clamp(2.2rem, 5.5vw, 3.6rem);
+  font-weight:600;
+  line-height:1;
+  letter-spacing:-0.03em;
+  color:var(--ink);
+  margin-bottom:0.4rem;
+}
+
+.timer-lbl{
+  font-family:'Plus Jakarta Sans', sans-serif;
+  font-size:clamp(0.64rem, 1.2vw, 0.75rem);
+  font-weight:500;
+  letter-spacing:0.18em;
+  text-transform:uppercase;
   color:var(--ink-2);
 }
+
+.page__anniversary-quote{
+  font-family:'Cormorant Garamond', Georgia, serif;
+  font-size:clamp(1.15rem, 2.2vw, 1.35rem);
+  font-style:italic;
+  line-height:1.6;
+  max-width:32ch;
+  color:var(--ink);
+}
+
 .page__cta{
   display:inline-block; margin-top:2.4rem; padding:.85rem 1.9rem;
   border:1px solid var(--ink); border-radius:999px;

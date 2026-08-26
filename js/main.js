@@ -12,7 +12,6 @@ let ipodModel = null, camModel = null;   // in flight from the moment it is
 const $ = id => document.getElementById(id);
 const body      = document.body;
 const markWrap  = $('mark');
-const markVideo = $('markVideo');
 const glCanvas  = $('gl');
 const workWrap  = $('work');
 const hint      = $('hint');
@@ -91,6 +90,31 @@ function armGlobalGesture(){
   window.addEventListener('touchend', go);
 }
 
+/* ── anniversary live timer (since 31 Jan 2026) ────────────────────────── */
+const ANNIVERSARY_START = new Date('2026-01-31T00:00:00');
+
+function tickAnniversary(){
+  const now = new Date();
+  const diff = Math.max(0, now - ANNIVERSARY_START);
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+  const minutes = Math.floor((diff / (1000 * 60)) % 60);
+  const seconds = Math.floor((diff / 1000) % 60);
+
+  const daysEl = $('counterDays');
+  const hoursEl = $('counterHours');
+  const minsEl = $('counterMins');
+  const secsEl = $('counterSecs');
+
+  if (daysEl) daysEl.textContent = days;
+  if (hoursEl) hoursEl.textContent = String(hours).padStart(2, '0');
+  if (minsEl) minsEl.textContent = String(minutes).padStart(2, '0');
+  if (secsEl) secsEl.textContent = String(seconds).padStart(2, '0');
+}
+setInterval(tickAnniversary, 1000);
+tickAnniversary();
+
 /* ── routing ────────────────────────────────────────────────────────── */
 const pages = { about: $('pageAbout'), contact: $('pageContact') };
 let lastStage = 'work';
@@ -101,6 +125,7 @@ function routeFromHash(){
 }
 async function applyRoute(){
   const r = routeFromHash();
+  const aboutVideo = $('aboutVideo');
   for (const [name, el] of Object.entries(pages)){
     if (name === r) continue;
     if (!el.hidden){ el.classList.remove('is-lit'); await sleep(reduced ? 0 : 260); el.hidden = true; }
@@ -112,8 +137,12 @@ async function applyRoute(){
     el.classList.add('is-lit');
     body.dataset.stage = 'page';
     el.querySelector('.page__back, .page__cta, h1').focus?.();
-  } else if (body.dataset.stage === 'page'){
-    body.dataset.stage = lastStage;
+    if (r === 'about' && aboutVideo) aboutVideo.play().catch(()=>{});
+  } else {
+    if (aboutVideo) aboutVideo.pause();
+    if (body.dataset.stage === 'page'){
+      body.dataset.stage = lastStage;
+    }
   }
 }
 window.addEventListener('hashchange', applyRoute);
@@ -190,9 +219,8 @@ async function main(){
   try {
     await Promise.race([
       Promise.all([
-        // VCR sets two words on the iPod's screen and nothing else, so the
-        // lite path must never pay for it
         LITE ? Promise.resolve() : document.fonts.load('400 40px "VCR OSD Mono"'),
+        document.fonts.load('400 48px "Caveat"'),
         document.fonts.load('500 24px "SF Pro Display"'),
         document.fonts.load('400 24px "SF Pro Display"')
       ]),
@@ -217,12 +245,11 @@ async function main(){
   }
 
   // ── the mark
-  markVideo.play().catch(() => {});
   const markDone = new Promise(res => {
     let fired = false;
     const go = () => { if (!fired){ fired = true; res(); } };
-    markVideo.addEventListener('ended', go, { once:true });
-    setTimeout(go, reduced ? 900 : 5600);            // never hang on a stalled decode
+    markWrap?.addEventListener('click', go, { once:true });
+    setTimeout(go, reduced ? 800 : 3400);            // 3.4s elegant heart pulse intro
   });
   await markDone;
   if (skipped) return;

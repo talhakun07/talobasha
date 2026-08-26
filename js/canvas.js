@@ -33,23 +33,35 @@ const TAP        = COARSE ? 12 : 8;   // a finger wanders; a mouse does not
    Four columns, three rows, two slots deliberately left empty so the plane
    breathes. Per-column vertical offsets break the rows without breaking the
    tiling — a constant offset per column repeats cleanly. */
-const COLS = 4, ROWS = 3;
+const COLS = 7, ROWS = 6;
 const COL_GAP = 0.34, ROW_GAP = 0.42;
 const TILE_AR = 9 / 16;
-const COL_OFF = [0, 0.30, 0.12, 0.44];
+const COL_OFF = [0, 0.28, 0.12, 0.42, 0.08, 0.35, 0.18];
 
-const SLOTS = [
-  { c:0, r:0, kind:'work', i:0 },
-  { c:1, r:0, kind:'work', i:1 },
-  { c:2, r:0, kind:'card', i:0 },
-  { c:3, r:0, kind:'work', i:2 },
-  { c:0, r:1, kind:'work', i:3 },
-  { c:1, r:1, kind:'card', i:1 },
-  { c:2, r:1, kind:'work', i:4 },
-  { c:3, r:1, kind:'work', i:5 },
-  { c:0, r:2, kind:'work', i:6 },
-  { c:2, r:2, kind:'work', i:7 }
-];
+function generateSlots(){
+  const slots = [];
+  const emptyPositions = new Set(['1,1', '3,2', '5,0', '0,4', '4,4', '2,5', '6,3']);
+  const cardPositions = { '2,1': 0, '4,3': 1 };
+  let workIdx = 0;
+  for (let r = 0; r < ROWS; r++){
+    for (let c = 0; c < COLS; c++){
+      const key = `${c},${r}`;
+      if (emptyPositions.has(key)) continue;
+      if (cardPositions[key] !== undefined && cardPositions[key] < CARDS.length){
+        slots.push({ c, r, kind: 'card', i: cardPositions[key] });
+      } else if (workIdx < WORKS.length){
+        slots.push({ c, r, kind: 'work', i: workIdx++ });
+      }
+    }
+  }
+  while (workIdx < WORKS.length){
+    const r = Math.floor(workIdx / COLS) % ROWS;
+    const c = workIdx % COLS;
+    slots.push({ c, r, kind: 'work', i: workIdx++ });
+  }
+  return slots;
+}
+const SLOTS = generateSlots();
 
 /* Edge softness. Real glass is sharp on axis and falls off toward the corner
    of the image circle; this is that, not a decorative blur. Done at a third
@@ -96,17 +108,24 @@ export class WorkCanvas {
     this.px = -9999; this.py = -9999;   // raw cursor
     this.spread = 1;
 
-    this.videos = WORKS.map(w => {
-      const v = document.createElement('video');
-      // a phone gets the 640-wide set: 3.2 MB instead of 13, and a frame the
-      // hardware decoder can actually keep up with
-      v.src = COARSE ? w.src.replace('/tiles/', '/tiles-sm/') : w.src;
-      v.muted = true; v.loop = true; v.playsInline = true;
-      v.preload = 'auto'; v.setAttribute('playsinline','');
-      v.addEventListener('loadeddata', () => { this.ready = true; });
-      return v;
+    this.media = WORKS.map(w => {
+      const isVideo = w.type === 'video' || /\.(mp4|webm|mov)$/i.test(w.src);
+      if (isVideo){
+        const v = document.createElement('video');
+        v.src = COARSE ? w.src.replace('/tiles/', '/tiles-sm/') : w.src;
+        v.muted = true; v.loop = true; v.playsInline = true;
+        v.preload = 'auto'; v.setAttribute('playsinline','');
+        v.addEventListener('loadeddata', () => { this.ready = true; });
+        return { kind: 'video', el: v, loaded: false };
+      } else {
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => { this.ready = true; };
+        img.src = w.src;
+        return { kind: 'image', el: img, loaded: true };
+      }
     });
-    this.playing = new Array(this.videos.length).fill(false);
+    this.playing = new Array(this.media.length).fill(false);
 
     this.trackers = new Trackers();
     this.blurCv = document.createElement('canvas');
@@ -246,14 +265,19 @@ export class WorkCanvas {
     };
     this._raf = requestAnimationFrame(loop);
     document.addEventListener('visibilitychange', this._vis = () => {
-      if (document.hidden) this.videos.forEach(v => v.pause());
-      else this.playing.forEach((p, i) => { if (p) this.videos[i].play().catch(()=>{}); });
+      if (document.hidden){
+        this.media.forEach(m => { if (m.kind === 'video') m.el.pause(); });
+      } else {
+        this.playing.forEach((p, i) => {
+          if (p && this.media[i]?.kind === 'video') this.media[i].el.play().catch(()=>{});
+        });
+      }
     });
   }
   stop(){
     this.running = false;
     cancelAnimationFrame(this._raf);
-    this.videos.forEach(v => v.pause());
+    this.media.forEach(m => { if (m.kind === 'video') m.el.pause(); });
     this.playing.fill(false);
     if (this._vis) document.removeEventListener('visibilitychange', this._vis);
   }
@@ -287,11 +311,11 @@ export class WorkCanvas {
     const c = this.bctx, dpr = this.dpr;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, this.w, this.h);
-    c.fillStyle = '#ffffff';
+    c.fillStyle = '#f8f6f2';
     c.fillRect(0, 0, this.w, this.h);
 
-    const need = new Array(this.videos.length).fill(false);
-    const near = new Array(this.videos.length).fill(Infinity);
+    const need = new Array(this.media.length).fill(false);
+    const near = new Array(this.media.length).fill(Infinity);
     const cards = [];
     const tiles = [];
     const fcx = this.w / 2, fcy = this.h / 2;
@@ -325,54 +349,82 @@ export class WorkCanvas {
     this._cardRects = cards;
     this._tileRects = tiles;
 
-    /* A page only gets a handful of hardware decoders on iOS, and past that
-       they fail quietly — the plane fills with frozen frames and nothing in
-       the console says why. So on touch only the few films nearest the centre
-       are asked to run; the rest hold the last frame they painted, which is
-       what a paused <video> draws anyway. */
-    if (MAX_DECODE < this.videos.length){
+    /* On mobile / high counts, only decode videos in the active focus area */
+    if (MAX_DECODE < this.media.length){
       const live = new Set(
         need.map((n, i) => (n ? i : -1)).filter(i => i >= 0)
             .sort((a, b) => near[a] - near[b]).slice(0, MAX_DECODE));
       for (let n = 0; n < need.length; n++) if (need[n] && !live.has(n)) need[n] = false;
     }
 
-    // only decode what is actually on the plane in front of someone
-    for (let n = 0; n < this.videos.length; n++){
-      const v = this.videos[n];
+    // only decode/play videos that are actually visible
+    for (let n = 0; n < this.media.length; n++){
+      const item = this.media[n];
+      if (item.kind !== 'video') continue;
+      const v = item.el;
       if (need[n] && !this.playing[n]){ this.playing[n] = true; v.play().catch(()=>{}); }
       else if (!need[n] && this.playing[n]){ this.playing[n] = false; v.pause(); }
     }
   }
 
   paintWork(c, i, x, y){
-    const v = this.videos[i];
+    const item = this.media[i];
+    if (!item) return;
     const w = this.tileW, h = this.tileH;
-    if (v.readyState >= 2 && v.videoWidth){
-      // cover
-      const ar = v.videoWidth / v.videoHeight, tr = w / h;
-      let sw = v.videoWidth, sh = v.videoHeight, sx = 0, sy = 0;
-      if (ar > tr){ sw = v.videoHeight * tr; sx = (v.videoWidth - sw) / 2; }
-      else { sh = v.videoWidth / tr; sy = (v.videoHeight - sh) / 2; }
-      c.drawImage(v, sx, sy, sw, sh, x, y, w, h);
+    
+    if (item.kind === 'video'){
+      const v = item.el;
+      if (v.readyState >= 2 && v.videoWidth){
+        const ar = v.videoWidth / v.videoHeight, tr = w / h;
+        let sw = v.videoWidth, sh = v.videoHeight, sx = 0, sy = 0;
+        if (ar > tr){ sw = v.videoHeight * tr; sx = (v.videoWidth - sw) / 2; }
+        else { sh = v.videoWidth / tr; sy = (v.videoHeight - sh) / 2; }
+        c.drawImage(v, sx, sy, sw, sh, x, y, w, h);
+      } else {
+        c.fillStyle = '#f2f1f4';
+        c.fillRect(x, y, w, h);
+      }
     } else {
-      c.fillStyle = '#f2f1f4';
-      c.fillRect(x, y, w, h);
+      const img = item.el;
+      if (img.complete && img.naturalWidth){
+        const ar = img.naturalWidth / img.naturalHeight, tr = w / h;
+        let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0;
+        if (ar > tr){ sw = img.naturalHeight * tr; sx = (img.naturalWidth - sw) / 2; }
+        else { sh = img.naturalWidth / tr; sy = (img.naturalHeight - sh) / 2; }
+        c.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+      } else {
+        c.fillStyle = '#f2f1f4';
+        c.fillRect(x, y, w, h);
+      }
+    }
+
+    // Optional label on bottom of tile if present
+    const label = WORKS[i]?.label;
+    if (label){
+      c.save();
+      c.fillStyle = 'rgba(17, 16, 20, 0.42)';
+      c.fillRect(x, y + h - 22, w, 22);
+      c.font = '500 10.5px "SF Pro Display", sans-serif';
+      c.fillStyle = '#ffffff';
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.fillText(label, x + 8, y + h - 11);
+      c.restore();
     }
   }
 
   paintCard(c, card, x, y){
     const w = this.tileW, h = this.tileH;
     const size = Math.round(clamp(this.tileW * 0.115, 17, 34));
+    const cx = x + w / 2, cy = y + h / 2;
     c.fillStyle = '#111014';
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.font = `500 ${size}px "SF Pro Display", -apple-system, Helvetica, Arial, sans-serif`;
-    const cx = x + w / 2, cy = y + h / 2;
     c.fillText(card.text, cx, cy);
-    // the mark's asterisk, used once, as the only ornament on the plane
-    c.font = `400 ${Math.round(size * 0.8)}px "SF Pro Display", Helvetica, Arial, sans-serif`;
+    // subtle handwritten ornament above card text
+    c.font = `400 ${Math.round(size * 1.1)}px "Caveat", cursive`;
     c.fillStyle = '#111014';
-    c.fillText('*', cx, cy - size * 1.35);
+    c.fillText('~', cx, cy - size * 1.25);
 
     const tw = Math.max(size * 4.2, c.measureText(card.text).width);
     return { x: cx - tw / 2 - 12, y: cy - size * 2.1, w: tw + 24, h: size * 3.4 };

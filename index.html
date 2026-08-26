@@ -3,11 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>nomad</title>
-<meta name="description" content="nomad — studio.">
+<title>Talobasha — photography</title>
+<meta name="description" content="Talobasha — photography & visual memories.">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#ffffff">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='16' y='24' font-size='28' font-family='Helvetica,Arial' text-anchor='middle' fill='%23111014'%3E*%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Homemade+Apple&family=Reenie+Beanie&family=La+Belle+Aurore&family=Sacramento&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='16' y='24' font-size='22' font-family='serif' font-style='italic' text-anchor='middle' fill='%23111014'%3Et%3C/text%3E%3C/svg%3E">
 <link rel="preload" as="font" type="font/woff2" href="./assets/fonts/SFProDisplay-Regular.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="./assets/fonts/VCR.woff2" crossorigin
       media="(pointer: fine)">
@@ -20,12 +23,24 @@
 
   <!-- ── stage 1 · the mark ───────────────────────────────────────────── -->
   <div class="mark" id="mark" aria-hidden="true">
-    <video class="mark__v" id="markVideo" src="./assets/video/mark.mp4"
-           muted playsinline preload="auto"></video>
+    <div class="mark__brand" id="markBrand">
+      <span class="mark__letter" style="--i:0">t</span>
+      <span class="mark__letter" style="--i:1">a</span>
+      <span class="mark__letter" style="--i:2">l</span>
+      <span class="mark__letter" style="--i:3">o</span>
+      <span class="mark__letter" style="--i:4">b</span>
+      <span class="mark__letter" style="--i:5">a</span>
+      <span class="mark__letter" style="--i:6">s</span>
+      <span class="mark__letter" style="--i:7">h</span>
+      <span class="mark__letter" style="--i:8">a</span>
+    </div>
   </div>
 
   <!-- ── stage 2/3 · webgl (ipod, then camera) ────────────────────────── -->
   <canvas class="gl" id="gl" aria-hidden="true"></canvas>
+
+  <!-- ── the paper texture · tactile grain across light stages ─────── -->
+  <div class="paper-texture" id="paperTexture" aria-hidden="true"></div>
 
   <!-- ── the lens vignette · rides the whole intro, lifts as the page lands ─ -->
   <div class="vig" id="vig" aria-hidden="true"></div>
@@ -38,19 +53,44 @@
 
   <!-- ── pages ────────────────────────────────────────────────────────── -->
   <section class="page" id="pageAbout" hidden>
-    <div class="page__in">
-      <h1 class="page__t">about</h1>
-      <p class="page__p" id="aboutBody">[ PLACEHOLDER — a short paragraph about the studio: what nomad
-      makes, who it makes it for, and how it works. Replace this text. ]</p>
+    <div class="page__in page__in--wide">
+      <h1 class="page__t">about talobasha</h1>
+      <div class="page__media">
+        <video class="page__video" id="aboutVideo" src="./assets/tiles/TALOBASHA.mp4"
+               autoplay loop muted playsinline controls preload="auto"></video>
+      </div>
+      <p class="page__p" id="aboutBody">A collection of captured frames, quiet corners, and cherished moments.</p>
       <button class="page__back" type="button" data-back>back</button>
     </div>
   </section>
 
   <section class="page" id="pageContact" hidden>
-    <div class="page__in">
-      <h1 class="page__t">contact</h1>
-      <p class="page__p">[ PLACEHOLDER — one line on what to get in touch about. ]</p>
-      <a class="page__cta" id="mailCta" href="mailto:hello@example.com">write to us</a>
+    <div class="page__in page__in--wide">
+      <h1 class="page__t">our time together</h1>
+      <p class="page__anniversary-date">since 31 January 2026</p>
+      
+      <div class="timer-grid">
+        <div class="timer-card">
+          <span class="timer-val" id="counterDays">0</span>
+          <span class="timer-lbl">Days</span>
+        </div>
+        <div class="timer-card">
+          <span class="timer-val" id="counterHours">00</span>
+          <span class="timer-lbl">Hours</span>
+        </div>
+        <div class="timer-card">
+          <span class="timer-val" id="counterMins">00</span>
+          <span class="timer-lbl">Minutes</span>
+        </div>
+        <div class="timer-card">
+          <span class="timer-val" id="counterSecs">00</span>
+          <span class="timer-lbl">Seconds</span>
+        </div>
+      </div>
+
+      <p class="page__p page__anniversary-quote">
+        Every captured moment, every quiet smile, and every frame of our story — counting every single second with you.
+      </p>
       <button class="page__back" type="button" data-back>back</button>
     </div>
   </section>
