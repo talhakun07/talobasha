@@ -9,7 +9,7 @@ export const WORKS = [
   { src: './assets/tiles/document_6077976432963755182.mp4', label: '', type: 'video' },
   { src: './assets/tiles/“হায় ভালোবাসি তবুও ”.webp', label: 'হায় ভালোবাসি তবুও', type: 'photo' },
   { src: './assets/tiles/Organized chaos ¿ (1).webp', label: 'Organized chaos II', type: 'photo' },
-  { src: './assets/tiles/document_6077976432963755183.mp4', label: '', type: 'video' },
+  { src: './assets/tiles/TALOBASHA.mp4', label: 'talobasha', type: 'video' },
   { src: './assets/tiles/ল্যাদ খেতে খেতে পোস্টালাম.webp', label: 'ল্যাদ', type: 'photo' },
   { src: './assets/tiles/document_6077976432963755191.mp4', label: '', type: 'video' },
   { src: './assets/tiles/WhatsApp Image 2026-08-26 at 2.11.39 PM.jpeg', label: 'talobasha', type: 'photo' },
